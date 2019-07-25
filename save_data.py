@@ -2,79 +2,119 @@
 # @Author: youerning
 # @Date:   2019-06-24 20:11:30
 # @Last Modified by:   youerning
-# @Last Modified time: 2019-06-24 22:28:31
+# @Last Modified time: 2019-07-25 17:41:55
 # 下载日线数据
 import tushare as ts
-import sqlite3
 import pandas as pd
+import time
+import os
+import json
 from datetime import datetime
 from os import path
 from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures as futures
-import time
-import os
+from queue import Queue
 
 
-TOKEN = "0c0bc7d7e15afa21a81c8da767227c9f5ffae9ab235d85bdd3473248"
+config_file_name = "config.json"
+curdir = path.dirname(path.abspath(__file__))
+config_path = path.join(curdir, config_file_name)
+config = json.load(open(config_path))
 START_DATE = "2012-01-01"
 # END_DATE = ""
 DATA_DIR = "data"
-READALL_SQL = "SELECT * FROM DATA"
-READ_ONE_SQL = "SELECT * FROM DATA ORDER BY trade_date DESC LIMIT 1"
 DAY_FORMAT = "%Y%m%d"
+MAX_TRY = 5
+# (24 + 17) * 60 * 60
+UPDATE_INTERVAL = 41 * 60 * 60
+pass_set = set()
 
 
-def save_data(code):
+def code_gen(code_lst):
+    """
+    generate code, start_date, fp
+
+    code: str
+    start_date: str
+    fp: str, file path
+    """
+    global pass_set
+    # 查询当前所有正常上市交易的股票列表
+    data_path = path.join(curdir, DATA_DIR)
+
+    if not path.exists(data_path):
+        os.mkdir(data_path)
+
     now = datetime.now()
-    now_str = now.strftime(DAY_FORMAT)
-    abs_path = path.dirname(path.abspath(__file__))
 
-    print("下载股票(%s)日线数据" % code)
-    fname = "%s.db" % code
-    db_path = path.join(abs_path, DATA_DIR, fname)
+    for code in code_lst:
+        if code in pass_set:
+            continue
 
-    # TODO:
-    # with open conn
-    if path.exists(db_path) and os.stat(db_path).st_size > 0:
-        print("db文件已存在")
-        conn = sqlite3.connect(db_path)
-        res = pd.read_sql(READ_ONE_SQL, conn)
-        last_trade_date = res.iloc[0, 1]
-        print("上次时间: %s" % last_trade_date)
-        if now_str == last_trade_date:
-            print("数据已经是最新的了")
-            return
-        start_date = pd.to_datetime(last_trade_date) + pd.Timedelta(1, unit="D")
-        start_date = start_date.strftime(DAY_FORMAT)
+        fp = path.join(data_path, "%s.csv" % code)
 
-        print("上次时间: %s" % last_trade_date)
-    else:
-        conn = sqlite3.connect(db_path)
-        start_date = START_DATE
-        print("全量更新股票")
+        if path.exists(fp):
+            df = pd.read_csv(fp, parse_dates=["trade_date"])
+            latest_trade_date = max(df["trade_date"])
 
-    if start_date == now_str:
-        print("数据已经是最新的了")
-        return
+            date_diff = latest_trade_date - now
+
+            if date_diff.total_seconds() > UPDATE_INTERVAL:
+                start_date = latest_trade_date.strftime(DAY_FORMAT)
+                yield code, start_date, fp
+            else:
+                pass_set.add(code)
+        else:
+            yield code, START_DATE, fp
+
+
+def save_data(code, start_date, fp):
+    print("下载股票(%s)日线数据到 %s" % (code, fp))
+
     try:
         data = pro.daily(ts_code=code, start_date=start_date)
-    except Exception as e:
+        pass_set.add(code)
+    except Exception:
         time.sleep(10)
+        print("股票: %s 下载失败" % code)
         return
 
-    data.sort_values("trade_date").to_sql("DATA", conn, index=False, if_exists="append")
-    print("下载成功")
+    if len(data) == 0:
+        pass_set.add(code)
+        return
+
+    try:
+        if path.exists(fp):
+            data.to_csv(fp, mode="a", header=False, index=False)
+        else:
+            data.to_csv(fp, index=False)
+    except Exception:
+        print("股票:%s 保存失败" % code)
 
 
 def main():
+    future_lst = []
     pool = ThreadPoolExecutor(3)
-    futures.wait(pool.map(save_data, code_lst))
-    print("所有任务完成")
+
+    print("开始下载...")
+    data = pro.stock_basic(list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
+    code_lst = data.ts_code
+
+    for i in range(1, MAX_TRY + 1):
+        for code, start_date, fp in code_gen(code_lst):
+            future = pool.submit(save_data, code, start_date, fp)
+            future_lst.append(future)
+
+        futures.wait(future_lst)
+        if len(pass_set) == len(code_lst):
+            break
+        print("第%s次任务完成" % i)
+
+    print("所有任务完成, 总共尝试了%s次" % i)
 
 
 if __name__ == '__main__':
-    pro = ts.pro_api()
-    # 查询当前所有正常上市交易的股票列表
-    data = pro.stock_basic(list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
-    code_lst = data.ts_code
+    q = Queue()
+    token = config["token"]
+    pro = ts.pro_api(token)
     main()
