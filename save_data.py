@@ -2,7 +2,7 @@
 # @Author: youerning
 # @Date:   2019-06-24 20:11:30
 # @Last Modified by:   youerning
-# @Last Modified time: 2019-07-25 17:41:55
+# @Last Modified time: 2019-07-25 21:03:23
 # 下载日线数据
 import tushare as ts
 import pandas as pd
@@ -10,6 +10,7 @@ import time
 import os
 import json
 from datetime import datetime
+from datetime import timedelta
 from os import path
 from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures as futures
@@ -46,6 +47,7 @@ def code_gen(code_lst):
         os.mkdir(data_path)
 
     now = datetime.now()
+    oneday = timedelta(days=1)
 
     for code in code_lst:
         if code in pass_set:
@@ -57,10 +59,12 @@ def code_gen(code_lst):
             df = pd.read_csv(fp, parse_dates=["trade_date"])
             latest_trade_date = max(df["trade_date"])
 
-            date_diff = latest_trade_date - now
+            date_diff = now - latest_trade_date
 
             if date_diff.total_seconds() > UPDATE_INTERVAL:
-                start_date = latest_trade_date.strftime(DAY_FORMAT)
+                start_date = latest_trade_date + oneday
+                start_date = start_date.strftime(DAY_FORMAT)
+                # print(start_date)
                 yield code, start_date, fp
             else:
                 pass_set.add(code)
@@ -84,6 +88,8 @@ def save_data(code, start_date, fp):
         return
 
     try:
+        data.trade_date = pd.to_datetime(data.trade_date)
+        data = data.sort_values("trade_date")
         if path.exists(fp):
             data.to_csv(fp, mode="a", header=False, index=False)
         else:
@@ -99,6 +105,7 @@ def main():
     print("开始下载...")
     data = pro.stock_basic(list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
     code_lst = data.ts_code
+    # print(code_lst)
 
     for i in range(1, MAX_TRY + 1):
         for code, start_date, fp in code_gen(code_lst):

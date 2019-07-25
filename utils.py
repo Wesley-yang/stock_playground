@@ -2,7 +2,7 @@
 # @Author: youerning
 # @Date:   2019-07-25 11:15:24
 # @Last Modified by:   youerning
-# @Last Modified time: 2019-07-25 16:21:21
+# @Last Modified time: 2019-07-25 20:54:36
 import sqlite3
 import logging
 import os
@@ -56,10 +56,13 @@ def convert():
     """convert data store with format sqlite to data with format csv"""
     db_glob_lst = glob(path.join(data_path, "*.db"))
     for db_path in db_glob_lst:
+        fp = db_path[:-3] + ".csv"
+        if path.exists(fp):
+            continue
+
         with sqlite3.connect(db_path) as conn:
-            data = pd.read_sql(READALL_SQL, conn)
-            fp = db_path.split(".")[0] + ".csv"
-            data.to_csv(fp, index=False)
+            data = pd.read_sql(READALL_SQL, conn, parse_dates=["trade_date"])
+            data.sort_values("trade_date").to_csv(fp, index=False)
 
 
 if __name__ == "__main__":
