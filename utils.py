@@ -2,7 +2,7 @@
 # @Author: youerning
 # @Date:   2019-07-25 11:15:24
 # @Last Modified by:   youerning
-# @Last Modified time: 2019-07-26 17:53:47
+# @Last Modified time: 2019-07-27 00:22:35
 import sqlite3
 import logging
 import os
@@ -11,6 +11,7 @@ import pandas as pd
 from glob import glob
 from os import path
 from settings import config
+from datetime import datetime
 
 
 READALL_SQL = "SELECT * FROM DATA"
@@ -43,14 +44,14 @@ def init_log(name, level=30, log_to_file=False):
 
 
 def load_hist():
-    data = {}
+    hist_data = {}
     db_glob_lst = glob(path.join(data_path, "*.csv"))
     for fp in db_glob_lst:
-        code = fp.split(".")[0]
-        hist = pd.read_csv(fp)
-        data[code] = hist
+        hist = pd.read_csv(fp, parse_dates=["trade_date"])
+        code = hist.ts_code[0]
+        hist_data[code] = hist
 
-    return data
+    return hist_data
 
 
 def convert():
@@ -78,24 +79,63 @@ def es_client():
     return es
 
 
+def find_max_date(ts_code):
+    es = es_client()
+    body = {
+        "aggs": {
+            "trade_date": {
+                "max": {
+                    "field": "trade_date"
+                }
+            }
+        },
+        "size": 0,
+        "query": {
+            "bool": {
+                "must": [
+                    {
+                        "match_phrase": {
+                            "ts_code.keyword": {
+                                "query": ts_code
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    }
+
+    ret = es.search(body=body)
+
+    return ret["aggregations"]["trade_date"]["value"]
+
+
 def dump():
     from elasticsearch.helpers import bulk
     date_format = "%Y-%m-%dT%H:%M:%S.%f+0800"
     es = es_client()
     # print(es.search())
-    db_glob_lst = glob(path.join(data_path, "*.csv"))
-    for db_path in db_glob_lst:
-        # index_name = "stock" + path.basename(db_path).lower()
-        data = pd.read_csv(db_path, parse_dates=["trade_date"])
-        index_name = "stock-" + data.ts_code[0].lower()
-        print("从 %s 加载数据" % db_path)
+    hist_data = load_hist()
+    for code in hist_data:
+        print("开始上传股票: %s" % code)
+        data = hist_data[code]
+        index_name = config["stock_index_name"]
 
         bulk_lst = []
+        max_date = find_max_date(code)
+        if max_date:
+            max_date = datetime.fromtimestamp(max_date / 1000)
+            print(max_date)
+        else:
+            max_date = datetime(1990, 1, 1)
+
         for idx, value in enumerate(data.values, start=1):
             doc = {}
             for col_name, v in zip(data.columns, value):
                 doc[col_name] = v
 
+            if doc["trade_date"] > max_date:
+                continue
             doc["trade_date"] = doc["trade_date"].strftime(date_format)
             doc_id = "-".join([doc["ts_code"], doc["trade_date"]])
             bulk_lst.append({
@@ -105,7 +145,13 @@ def dump():
                             "_source": doc,
                             })
 
-            if idx % 100 == 0:
+            if idx % 500 == 0:
                 bulk(es, bulk_lst, stats_only=True)
                 bulk_lst = []
 
+        if bulk_lst:
+            bulk(es, bulk_lst, stats_only=True)
+
+
+if __name__ == "__main__":
+    print(find_max_date("000012.SZ"))
