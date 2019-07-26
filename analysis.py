@@ -2,7 +2,7 @@
 # @Author: youerning
 # @Date:   2019-07-25 09:37:12
 # @Last Modified by:   youerning
-# @Last Modified time: 2019-07-25 17:32:46
+# @Last Modified time: 2019-07-26 15:31:48
 import json
 import argparse
 import os
@@ -94,7 +94,6 @@ def risk_plot(df, index_df):
 
     fname = "%s.png" % df.ts_code[0]
     save_path = path.join(result_path, fname)
-
 
 
 def main():

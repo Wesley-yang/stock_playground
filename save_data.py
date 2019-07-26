@@ -2,7 +2,7 @@
 # @Author: youerning
 # @Date:   2019-06-24 20:11:30
 # @Last Modified by:   youerning
-# @Last Modified time: 2019-07-25 21:03:23
+# @Last Modified time: 2019-07-26 14:52:01
 # 下载日线数据
 import tushare as ts
 import pandas as pd
@@ -76,7 +76,11 @@ def save_data(code, start_date, fp):
     print("下载股票(%s)日线数据到 %s" % (code, fp))
 
     try:
-        data = pro.daily(ts_code=code, start_date=start_date)
+        data = ts.pro_bar(ts_code=code, adj='qfq', start_date=start_date)
+        # 当超过调用次数限制返回None
+        if data is None:
+            time.sleep(10)
+            return
         pass_set.add(code)
     except Exception:
         time.sleep(10)
@@ -123,5 +127,6 @@ def main():
 if __name__ == '__main__':
     q = Queue()
     token = config["token"]
+    ts.set_token(token)
     pro = ts.pro_api(token)
     main()
