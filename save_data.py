@@ -2,25 +2,22 @@
 # @Author: youerning
 # @Date:   2019-06-24 20:11:30
 # @Last Modified by:   youerning
-# @Last Modified time: 2019-07-26 14:52:01
+# @Last Modified time: 2019-07-26 17:48:01
 # 下载日线数据
 import tushare as ts
 import pandas as pd
 import time
 import os
-import json
 from datetime import datetime
 from datetime import timedelta
 from os import path
 from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures as futures
 from queue import Queue
+from settings import config
 
 
-config_file_name = "config.json"
 curdir = path.dirname(path.abspath(__file__))
-config_path = path.join(curdir, config_file_name)
-config = json.load(open(config_path))
 START_DATE = "2012-01-01"
 # END_DATE = ""
 DATA_DIR = "data"

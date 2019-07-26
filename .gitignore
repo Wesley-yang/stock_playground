@@ -1,4 +1,6 @@
 *.db
 *.json
+*.pyc
 data/
 nbtest/
+__pycache__/

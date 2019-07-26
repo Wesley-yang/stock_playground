@@ -2,7 +2,7 @@
 # @Author: youerning
 # @Date:   2019-07-25 11:15:24
 # @Last Modified by:   youerning
-# @Last Modified time: 2019-07-26 16:19:40
+# @Last Modified time: 2019-07-26 17:53:47
 import sqlite3
 import logging
 import os
@@ -10,6 +10,7 @@ import sys
 import pandas as pd
 from glob import glob
 from os import path
+from settings import config
 
 
 READALL_SQL = "SELECT * FROM DATA"
@@ -17,7 +18,6 @@ READ_ONE_SQL = "SELECT * FROM DATA ORDER BY trade_date DESC LIMIT 1"
 data_path_name = "data"
 curdir = path.dirname(path.abspath(__file__))
 data_path = path.join(curdir, data_path_name)
-es_host = "127.0.0.1:9200"
 
 
 def init_log(name, level=30, log_to_file=False):
@@ -71,11 +71,17 @@ def convert():
         data.sort_values("trade_date").to_csv(db_path, index=False)
 
 
-def dump():
+def es_client():
     from elasticsearch import Elasticsearch
+    es = Elasticsearch(config["es_host"])
+
+    return es
+
+
+def dump():
     from elasticsearch.helpers import bulk
     date_format = "%Y-%m-%dT%H:%M:%S.%f+0800"
-    es = Elasticsearch([es_host])
+    es = es_client()
     # print(es.search())
     db_glob_lst = glob(path.join(data_path, "*.csv"))
     for db_path in db_glob_lst:
@@ -103,16 +109,3 @@ def dump():
                 bulk(es, bulk_lst, stats_only=True)
                 bulk_lst = []
 
-
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-v", "--verbose", action="count", default=0)
-    parser.add_argument('action', choices=["convert", "dump"])
-    args = parser.parse_args()
-    # convert()
-
-    if args.action == "convert":
-        convert()
-    elif args.action == "dump":
-        dump()
