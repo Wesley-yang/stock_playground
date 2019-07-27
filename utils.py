@@ -2,7 +2,7 @@
 # @Author: youerning
 # @Date:   2019-07-25 11:15:24
 # @Last Modified by:   youerning
-# @Last Modified time: 2019-07-27 00:22:35
+# @Last Modified time: 2019-07-27 11:32:08
 import sqlite3
 import logging
 import os
@@ -79,7 +79,7 @@ def es_client():
     return es
 
 
-def find_max_date(ts_code):
+def find_max_date(ts_code, index_name):
     es = es_client()
     body = {
         "aggs": {
@@ -105,7 +105,10 @@ def find_max_date(ts_code):
         }
     }
 
-    ret = es.search(body=body)
+    try:
+        ret = es.search(body=body, index=index_name)
+    except Exception:
+        return None
 
     return ret["aggregations"]["trade_date"]["value"]
 
@@ -115,19 +118,18 @@ def dump():
     date_format = "%Y-%m-%dT%H:%M:%S.%f+0800"
     es = es_client()
     # print(es.search())
+    index_name = config["stock_index_name"]
     hist_data = load_hist()
+
     for code in hist_data:
         print("开始上传股票: %s" % code)
         data = hist_data[code]
-        index_name = config["stock_index_name"]
 
         bulk_lst = []
-        max_date = find_max_date(code)
+        max_date = find_max_date(code, index_name)
         if max_date:
             max_date = datetime.fromtimestamp(max_date / 1000)
-            print(max_date)
-        else:
-            max_date = datetime(1990, 1, 1)
+            data = data[data.trade_date > max_date]
 
         for idx, value in enumerate(data.values, start=1):
             doc = {}
@@ -153,5 +155,47 @@ def dump():
             bulk(es, bulk_lst, stats_only=True)
 
 
+def dump_index():
+    import tushare as ts
+    from elasticsearch.helpers import bulk
+    date_format = "%Y-%m-%dT%H:%M:%S.%f+0800"
+    es = es_client()
+    token = config["token"]
+    index_name = config["index_index_name"]
+
+    ts.set_token(token)
+    data = ts.pro_bar(ts_code='000001.SH', asset='I', start_date=config["START_DATE"])
+    data.trade_date = pd.to_datetime(data.trade_date)
+    index_code = data.ts_code[0]
+
+    bulk_lst = []
+    max_date = find_max_date(index_code, index_name)
+    if max_date:
+        max_date = datetime.fromtimestamp(max_date / 1000)
+        data = data[data.trade_date > max_date]
+
+    for idx, value in enumerate(data.values, start=1):
+        doc = {}
+        for col_name, v in zip(data.columns, value):
+            doc[col_name] = v
+
+        doc["trade_date"] = doc["trade_date"].strftime(date_format)
+        doc_id = "-".join([doc["ts_code"], doc["trade_date"]])
+        bulk_lst.append({
+                        "_index": index_name,
+                        "_id": doc_id,
+                        "_type": "doc",
+                        "_source": doc,
+                        })
+
+        if idx % 500 == 0:
+            print(bulk(es, bulk_lst, stats_only=True))
+            bulk_lst = []
+
+    if bulk_lst:
+        print(bulk(es, bulk_lst, stats_only=True))
+
+
 if __name__ == "__main__":
-    print(find_max_date("000012.SZ"))
+    print(find_max_date("000012.SZ", "stock"))
+    print(find_max_date("000001.SH", "index"))

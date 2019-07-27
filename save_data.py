@@ -2,7 +2,7 @@
 # @Author: youerning
 # @Date:   2019-06-24 20:11:30
 # @Last Modified by:   youerning
-# @Last Modified time: 2019-07-26 17:48:01
+# @Last Modified time: 2019-07-27 12:07:39
 # 下载日线数据
 import tushare as ts
 import pandas as pd
@@ -13,18 +13,18 @@ from datetime import timedelta
 from os import path
 from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures as futures
-from queue import Queue
 from settings import config
 
 
 curdir = path.dirname(path.abspath(__file__))
-START_DATE = "2012-01-01"
+# 方便直接调用
+START_DATE = config["START_DATE"]
 # END_DATE = ""
-DATA_DIR = "data"
-DAY_FORMAT = "%Y%m%d"
-MAX_TRY = 5
+DATA_DIR = config["DATA_DIR"]
+DAY_FORMAT = config["DAY_FORMAT"]
+MAX_TRY = config["MAX_TRY"]
 # (24 + 17) * 60 * 60
-UPDATE_INTERVAL = 41 * 60 * 60
+UPDATE_INTERVAL = config["UPDATE_INTERVAL"]
 pass_set = set()
 
 
@@ -102,6 +102,9 @@ def save_data(code, start_date, fp):
 def main():
     future_lst = []
     pool = ThreadPoolExecutor(3)
+    token = config["token"]
+    ts.set_token(token)
+    pro = ts.pro_api(token)
 
     print("开始下载...")
     data = pro.stock_basic(list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
@@ -122,8 +125,4 @@ def main():
 
 
 if __name__ == '__main__':
-    q = Queue()
-    token = config["token"]
-    ts.set_token(token)
-    pro = ts.pro_api(token)
     main()
