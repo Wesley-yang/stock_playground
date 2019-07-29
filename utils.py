@@ -2,7 +2,7 @@
 # @Author: youerning
 # @Date:   2019-07-25 11:15:24
 # @Last Modified by:   youerning
-# @Last Modified time: 2019-07-27 11:32:08
+# @Last Modified time: 2019-07-29 15:41:55
 import sqlite3
 import logging
 import os
@@ -43,15 +43,26 @@ def init_log(name, level=30, log_to_file=False):
     return logger
 
 
-def load_hist():
-    hist_data = {}
+def load_hist(func=None, start_date=None, end_date=None):
+    """加载本地历史数据
+
+    func: 用于过滤历史数据的函数, 接受一个Datarame对象
+    start_date: 起始时间
+    end_date: 截至时间
+    """
     db_glob_lst = glob(path.join(data_path, "*.csv"))
     for fp in db_glob_lst:
         hist = pd.read_csv(fp, parse_dates=["trade_date"])
+        if func is not None:
+            hist = func(hist)
         code = hist.ts_code[0]
-        hist_data[code] = hist
+        yield code, hist
 
-    return hist_data
+
+def load_all_hist():
+    """load_hist的快捷方法"""
+    data = {code: hist for code, hist in load_hist()}
+    return data
 
 
 def convert():
